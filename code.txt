@@ -1,0 +1,59 @@
+#include <WiFi.h>
+#include <ArduinoWebsockets.h>
+#include <ArduinoJson.h>
+
+using namespace websockets;
+
+const char* ssid = "wifiname, same as one device is using";
+const char* password = "wifi password";
+const char* ws_server = "ws://device ipv4 address:8081"; // Node.js WS server
+
+WebsocketsClient client;
+
+const int LED_PINS[4] = {16, 17, 18, 19}; // pick 4 pins for LEDs
+
+void setup() {
+  Serial.begin(115200);
+
+  // connect WiFi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi connected!");
+
+  // set LED pins
+  for (int i = 0; i < 4; i++) {
+    pinMode(LED_PINS[i], OUTPUT);
+    digitalWrite(LED_PINS[i], LOW);
+  }
+
+  // connect to WS server
+  if (client.connect(ws_server)) {
+    Serial.println("Connected to WS server");
+  } else {
+    Serial.println("WS connection failed!");
+  }
+
+  client.onMessage([&](WebsocketsMessage message) {
+    String payload = message.data();
+    Serial.println("Message from server: " + payload);
+
+    StaticJsonDocument<128> doc;
+    DeserializationError err = deserializeJson(doc, payload);
+    if (!err) {
+      int id = doc["id"];
+      bool state = doc["state"];
+      if (id >= 1 && id <= 4) {
+        digitalWrite(LED_PINS[id-1], state ? HIGH : LOW);
+        Serial.printf("LED%d -> %s\n", id, state ? "ON" : "OFF");
+        client.send("LED" + String(id) + " set to " + (state ? "ON" : "OFF"));
+      }
+    }
+  });
+}
+
+void loop() {
+  client.poll();
+}
